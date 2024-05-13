@@ -42,15 +42,25 @@ const getDrcInfo = async (url) => {
 const geomertiesIterator = async (geometries) => {
   try {
     // extract keys to iterate over geometries
-    const keys = Object.keys(geometries);
+    let keys = Object.keys(geometries);
+    keys = keys.filter(item=> {
+      if(geometries[item] && geometries[item].drcpath && geometries[item].drcpath.slice(0,5)==='https'){
+        return item;
+      }else{
+        delete geometries[item]
+      }
+    })
     const returnableGeometries = [];
     const drcInfosReq = [];
     keys.forEach((item) => {
       // call the request function to make axios head request to drcpath to obtain info.
+      // console.log(geometries[item].drcpath.slice(0,5))
+      // if(geometries[item].drcpath.slice(0,5)==='https')
       drcInfosReq.push(getDrcInfo(geometries[item].drcpath));
     });
     let drcInfosRes = await Promise.all(drcInfosReq);
     keys.forEach((item, index) => {
+      // if(geometries[item].drcpath.slice(0,5)==='https')
       returnableGeometries[index] = {
         name: geometries[item].name,
         drcpath: geometries[item].drcpath,
@@ -86,9 +96,11 @@ const fetchAndSaveRecord = async (limit = 2, skip = 0, db) => {
       // create a function to iterate over the geometries
       transformedItemToReturn.assetGroupId = item._id;
       transformedItemToReturn.assetGroupName = item.name;
-      transformedItemToReturn.geometries = await geomertiesIterator(
-        item.assetMetadata.webglasset.geometries
-      );
+      if (item.assetMetadata && item.assetMetadata.webglasset && item.assetMetadata.webglasset.geometries) {
+        transformedItemToReturn.geometries = await geomertiesIterator(
+          item.assetMetadata.webglasset.geometries
+        );
+      }
       // console.log(transformedItemToReturn)
       return transformedItemToReturn;
     });
@@ -125,6 +137,7 @@ const start = async () => {
     
       // Fetch and save records based on the current skip and limit
       await fetchAndSaveRecord(limit,skip, db)
+      await new Promise(resolve => setTimeout(resolve, 5000));
     
       // Increment the skip by the limit
       skip+=limit;
