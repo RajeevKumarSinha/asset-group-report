@@ -19,7 +19,38 @@ const connectToMongodb = async () => {
   } catch (err) {
     // Log an error message and exit the process if the connection fails
     console.log("Connection to mongoDB failed", err);
-    ;
+  }
+};
+
+// Task
+// download the drc file into the drc folder
+const downloadDrcFile = async (url) => {
+  try {
+    const response = await axios({
+      method: "get",
+      url: url,
+      responseType: "stream",
+    });
+
+    const path = require("path");
+    const fs = require("fs");
+    const drcPath = path.join(__dirname, "drc", path.basename(url));
+
+    const writer = fs.createWriteStream(drcPath);
+
+    response.data.pipe(writer);
+
+    return new Promise((resolve, reject) => {
+      writer.on("finish", () => {
+        console.log(
+          `Successfully downloaded and saved the DRC file to ${drcPath}`
+        );
+        resolve(drcPath);
+      });
+      writer.on("error", reject);
+    });
+  } catch (error) {
+    console.log(error);
   }
 };
 
@@ -43,13 +74,17 @@ const geomertiesIterator = async (geometries) => {
   try {
     // extract keys to iterate over geometries
     let keys = Object.keys(geometries);
-    keys = keys.filter(item=> {
-      if(geometries[item] && geometries[item].drcpath && geometries[item].drcpath.slice(0,5)==='https'){
+    keys = keys.filter((item) => {
+      if (
+        geometries[item] &&
+        geometries[item].drcpath &&
+        geometries[item].drcpath.slice(0, 5) === "https"
+      ) {
         return item;
-      }else{
-        delete geometries[item]
+      } else {
+        delete geometries[item];
       }
-    })
+    });
     const returnableGeometries = [];
     const drcInfosReq = [];
     keys.forEach((item) => {
@@ -64,7 +99,7 @@ const geomertiesIterator = async (geometries) => {
       returnableGeometries[index] = {
         name: geometries[item].name,
         drcpath: geometries[item].drcpath,
-        fileSize: drcInfosRes[index].headers["content-length"],
+        fileSize: Number(drcInfosRes[index].headers["content-length"]),
       };
     });
     // drcInfosRes = drcInfosRes.map(item => item.headers['content-length'])
@@ -88,7 +123,7 @@ const fetchAndSaveRecord = async (limit = 2, skip = 0, db) => {
       .limit(limit)
       .skip(skip)
       .toArray();
-      // console.log(data.length)
+    // console.log(data.length)
     // filter the recieved data and transform it into mongodb exportable
     let transformedData = data.map(async (item) => {
       let transformedItemToReturn = {};
@@ -96,7 +131,11 @@ const fetchAndSaveRecord = async (limit = 2, skip = 0, db) => {
       // create a function to iterate over the geometries
       transformedItemToReturn.assetGroupId = item._id;
       transformedItemToReturn.assetGroupName = item.name;
-      if (item.assetMetadata && item.assetMetadata.webglasset && item.assetMetadata.webglasset.geometries) {
+      if (
+        item.assetMetadata &&
+        item.assetMetadata.webglasset &&
+        item.assetMetadata.webglasset.geometries
+      ) {
         transformedItemToReturn.geometries = await geomertiesIterator(
           item.assetMetadata.webglasset.geometries
         );
@@ -107,9 +146,8 @@ const fetchAndSaveRecord = async (limit = 2, skip = 0, db) => {
     transformedData = await Promise.all(transformedData);
 
     // bulk write these data into a new collection called asset-size-info
-    await db.collection("asset-size-info").insertMany(transformedData);
-    console.log(`Inserted data from ${skip} to ${skip+limit}`);
-    
+    // await db.collection("asset-size-info").insertMany(transformedData);
+    console.log(`Inserted data from ${skip} to ${skip + limit}`);
   } catch (err) {
     console.log("Error while fetching and saving records", err);
   }
@@ -121,29 +159,30 @@ const start = async () => {
     // Connect to the MongoDB cluster
     const mongoClient = await connectToMongodb();
     const db = mongoClient.db("productmaster_staging");
-  
+
     // Get the total number of documents in the 'assetgroups' collection
     const dbSize = await db.collection("assetgroups").countDocuments();
-    console.log(dbSize)
+    console.log(dbSize);
     // Initialize the skip and limit variables for pagination
-    let skip = 0, limit = 500;
-  
+    let skip = 0,
+      limit = 200;
+
     // Loop through the documents in the 'assetgroups' collection
-    while(dbSize!==0){
+    while (dbSize !== 0) {
       // If the remaining documents are less than the limit, set the limit to the remaining documents
-      if(dbSize-skip<=500){
-        limit = dbSize-skip
+      if (dbSize - skip <= 200) {
+        limit = dbSize - skip;
       }
-    
+
       // Fetch and save records based on the current skip and limit
-      await fetchAndSaveRecord(limit,skip, db)
-      await new Promise(resolve => setTimeout(resolve, 5000));
-    
+      await fetchAndSaveRecord(limit, skip, db);
+      // await new Promise(resolve => setTimeout(resolve, 200));
+
       // Increment the skip by the limit
-      skip+=limit;
-    
+      skip += limit;
+
       // If the limit is not equal to 500, break the loop
-      if(limit!==500){
+      if (limit !== 200) {
         break;
       }
     }
@@ -154,4 +193,14 @@ const start = async () => {
     console.log("Error while starting the process", err);
   }
 };
-start()
+// start();
+
+module.exports = {
+  connectToMongodb,
+  fetchAndSaveRecord,
+  start,
+  getDrcInfo,
+  geomertiesIterator,
+};
+
+// downloadDrcFile("https://foyrproductmaster.s3.amazonaws.com/assestgroup/00000000-0C00-4000-8000-E10000001400/webglassets/RPSBTPDP_00239_BOTTOM.drc")
